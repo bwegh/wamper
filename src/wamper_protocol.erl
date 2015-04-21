@@ -59,7 +59,8 @@ deserialize(Buffer,Messages,json) ->
 deserialize(Buffer,_Messages,json_batched) ->
   Wamps = binary:split(Buffer,[?JSONB_SEPERATOR],[global,trim]),
   {to_erl_reverse(lists:foldl(fun(M,List) -> [jsx:decode(M)|List] end,[],Wamps)),<<"">>};
-deserialize(<<Len:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_msgpack) ->
+deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_msgpack) ->
+  <<_Type:8,Len:24>> = LenType,
   case byte_size(Data) >= Len of
     true ->
       <<Enc:Len/binary,NewBuffer/binary>> = Data,
@@ -68,7 +69,8 @@ deserialize(<<Len:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_m
     false ->
       {to_erl_reverse(Messages),Buffer}
   end;
-deserialize(<<Len:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_json) ->
+deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_json) ->
+  <<_Type:8,Len:24>> = LenType,
   case byte_size(Data) >= Len of
     true ->
       <<Enc:Len/binary,NewBuffer/binary>> = Data,
@@ -85,7 +87,7 @@ serialize(Erwa,Enc) when is_tuple(Erwa) ->
   WAMP = to_wamp(Erwa),
   serialize(WAMP,Enc);
 serialize(Msg,msgpack)  ->
-  msgpack:pack(Msg, [{format,jsx}, {allow_atom,pack}]);
+  msgpack:pack(Msg, [{format,jsx}]);
 serialize(Msg,msgpack_batched) ->
   serialize(Msg,raw_msgpack);
 serialize(Msg,json)  ->
@@ -94,13 +96,13 @@ serialize(Msg,json_batched) ->
   Enc = jsx:encode(Msg),
   <<Enc/binary, ?JSONB_SEPERATOR/binary >>;
 serialize(Message,raw_msgpack) ->
-  Enc = msgpack:pack(Message, [{format,jsx}, {allow_atom,pack}]),
+  Enc = msgpack:pack(Message, [{format,jsx}]),
   Len = byte_size(Enc),
-  <<Len:32/unsigned-integer-big,Enc/binary>>;
+  <<0:8,Len:24/unsigned-integer-big,Enc/binary>>;
 serialize(Message,raw_json) ->
   Enc = jsx:encode(Message),
   Len = byte_size(Enc),
-  <<Len:32/unsigned-integer-big,Enc/binary>>.
+  <<0:8,Len:24/unsigned-integer-big,Enc/binary>>.
 
 
 
