@@ -69,10 +69,10 @@ deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,r
     {1,true} ->
       %Ping
       <<Ping:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[{ping,Ping}|Messages],raw_msgpack),
+      deserialize(NewBuffer,[{ping,Ping}|Messages],raw_msgpack);
     {2,true} ->
       <<Pong:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[{pong,Pong}|Messages],raw_msgpack),
+      deserialize(NewBuffer,[{pong,Pong}|Messages],raw_msgpack);
       %Pong
     {_,false} ->
       {to_erl_reverse(Messages),Buffer}
@@ -86,10 +86,10 @@ deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,r
     {1,true} ->
       %Ping
       <<Ping:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[{ping,Ping}|Messages],raw_json),
+      deserialize(NewBuffer,[{ping,Ping}|Messages],raw_json);
     {2,true} ->
       <<Pong:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[{pong,Pong}|Messages],raw_json),
+      deserialize(NewBuffer,[{pong,Pong}|Messages],raw_json);
       %Pong
     {_,false} ->
       {to_erl_reverse(Messages),Buffer}
@@ -611,7 +611,7 @@ dict_to_wamp(Dict) ->
                       {subscriber_list,<<"subscriber_list">>,false},
                       {subscriber_metaevents,<<"subscriber_metaevents">>,false},
                       {wampcra,<<"wampcra">>,false},
-                      {wildcard,<<"wildcard">>,false},
+                      {wildcard,<<"wildcard">>,false}
                       ]).
 
 
