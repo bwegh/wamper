@@ -60,22 +60,38 @@ deserialize(Buffer,_Messages,json_batched) ->
   Wamps = binary:split(Buffer,[?JSONB_SEPERATOR],[global,trim]),
   {to_erl_reverse(lists:foldl(fun(M,List) -> [jsx:decode(M)|List] end,[],Wamps)),<<"">>};
 deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_msgpack) ->
-  <<_Type:8,Len:24>> = LenType,
-  case byte_size(Data) >= Len of
-    true ->
+  <<Type:8,Len:24>> = LenType,
+  case {Type,byte_size(Data) >= Len}of
+    {0,true} ->
       <<Enc:Len/binary,NewBuffer/binary>> = Data,
       {ok,Msg} = msgpack:unpack(Enc,[{format,jsx}]),
       deserialize(NewBuffer,[Msg|Messages],raw_msgpack);
-    false ->
+    {1,true} ->
+      %Ping
+      <<Ping:Len/binary,NewBuffer/binary>> = Data,
+      deserialize(NewBuffer,[{ping,Ping}|Messages],raw_msgpack),
+    {2,true} ->
+      <<Pong:Len/binary,NewBuffer/binary>> = Data,
+      deserialize(NewBuffer,[{pong,Pong}|Messages],raw_msgpack),
+      %Pong
+    {_,false} ->
       {to_erl_reverse(Messages),Buffer}
   end;
 deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_json) ->
-  <<_Type:8,Len:24>> = LenType,
-  case byte_size(Data) >= Len of
-    true ->
+  <<Type:8,Len:24>> = LenType,
+  case {Type,byte_size(Data) >= Len} of
+    {0,true} ->
       <<Enc:Len/binary,NewBuffer/binary>> = Data,
       deserialize(NewBuffer,[jsx:decode(Enc)|Messages],raw_json);
-    false ->
+    {1,true} ->
+      %Ping
+      <<Ping:Len/binary,NewBuffer/binary>> = Data,
+      deserialize(NewBuffer,[{ping,Ping}|Messages],raw_json),
+    {2,true} ->
+      <<Pong:Len/binary,NewBuffer/binary>> = Data,
+      deserialize(NewBuffer,[{pong,Pong}|Messages],raw_json),
+      %Pong
+    {_,false} ->
       {to_erl_reverse(Messages),Buffer}
   end;
 deserialize(Buffer,Messages,_) ->
@@ -575,10 +591,12 @@ dict_to_wamp(Dict) ->
                       {features,<<"features">>,dict},
                       {iterations,<<"iterations">>,false},
                       {keylen,<<"keylen">>,false},
+                      {match,<<"match">>,value},
                       {partitioned_pubsub,<<"partitioned_pubsub">>,false},
                       {partitioned_rpc,<<"partitioned_rpc">>,false},
                       {pattern_based_registration,<<"pattern_based_registration">>,false},
                       {pattern_based_subscription,<<"pattern_based_subscription">>,false},
+                      {prefix,<<"prefix">>,false},
                       {progress,<<"progress">>,false},
                       {progressive_call_results,<<"progressive_call_results">>,false},
                       {publication_trustlevels,<<"publication_trustlevels">>,false},
@@ -592,7 +610,8 @@ dict_to_wamp(Dict) ->
                       {subscriber_blackwhite_listing,<<"subscriber_blackwhite_listing">>,false},
                       {subscriber_list,<<"subscriber_list">>,false},
                       {subscriber_metaevents,<<"subscriber_metaevents">>,false},
-                      {wampcra,<<"wampcra">>,false}
+                      {wampcra,<<"wampcra">>,false},
+                      {wildcard,<<"wildcard">>,false},
                       ]).
 
 
@@ -622,6 +641,7 @@ convert_dict(Direction,[{Key,Value}|T],Converted) ->
     case Deep of
       dict -> convert_dict(Direction,Value,[]);
       list -> convert_list(Direction,Value,[]);
+      value -> convert_value(Direction,Value);
       _ -> Value
     end,
   ConvKey =
@@ -653,6 +673,24 @@ convert_list(Direction,[Key|T],Converted) ->
       to_wamp -> WampKey
     end,
   convert_list(Direction,T,[ConvKey|Converted]).
+
+
+
+convert_value(Direction,Value) ->
+  ValPos =
+    case Direction of
+      to_erl -> 2;
+      to_wamp -> 1
+    end,
+  {ErlVal,WampVal} =
+    case lists:keyfind(Value,ValPos,?DICT_MAPPING) of
+      {EV,WV,_} -> {EV,WV};
+      false -> {Value,Value}
+    end,
+  case Direction of
+      to_erl -> ErlVal;
+      to_wamp -> WampVal
+  end.
 
 
 -ifdef(TEST).
