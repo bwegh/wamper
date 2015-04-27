@@ -60,7 +60,7 @@ deserialize(Buffer,_Messages,json_batched) ->
   Wamps = binary:split(Buffer,[?JSONB_SEPERATOR],[global,trim]),
   {to_erl_reverse(lists:foldl(fun(M,List) -> [jsx:decode(M)|List] end,[],Wamps)),<<"">>};
 deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_msgpack) ->
-  <<Type:8,Len:24>> = LenType,
+  <<Type:8,Len:24>> = << LenType:32 >>,
   case {Type,byte_size(Data) >= Len}of
     {0,true} ->
       <<Enc:Len/binary,NewBuffer/binary>> = Data,
@@ -78,7 +78,7 @@ deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,r
       {to_erl_reverse(Messages),Buffer}
   end;
 deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_json) ->
-  <<Type:8,Len:24>> = LenType,
+  <<Type:8,Len:24>> = << LenType:32 >>,
   case {Type,byte_size(Data) >= Len} of
     {0,true} ->
       <<Enc:Len/binary,NewBuffer/binary>> = Data,
