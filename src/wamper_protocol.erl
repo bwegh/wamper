@@ -623,6 +623,7 @@ dict_to_wamp(Dict) ->
                       {subscriber_blackwhite_listing,<<"subscriber_blackwhite_listing">>,false},
                       {subscriber_list,<<"subscriber_list">>,false},
                       {subscriber_metaevents,<<"subscriber_metaevents">>,false},
+                      {timeout,<<"timeout">>,false},
                       {wampcra,<<"wampcra">>,false},
                       {wildcard,<<"wildcard">>,false}
                       ]).
