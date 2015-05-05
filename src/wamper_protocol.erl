@@ -36,7 +36,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(JSONB_SEPERATOR,<<24>>).
+-define(JSONB_SEPARATOR,<<24>>).
 
 deserialize(Buffer,Encoding) ->
   deserialize(Buffer,[],Encoding).
@@ -47,7 +47,9 @@ deserialize(Buffer,Messages,msgpack) ->
   case msgpack:unpack_stream(Buffer,[{format,jsx}]) of
     {error,incomplete} ->
       {to_erl_reverse(Messages),Buffer};
-     {Msg,NewBuffer} ->
+    {error,Reason} ->
+      error(Reason);
+    {Msg,NewBuffer} ->
       deserialize(NewBuffer,[Msg|Messages],msgpack)
   end;
 deserialize(Buffer,Messages,msgpack_batched) ->
@@ -57,7 +59,7 @@ deserialize(Buffer,Messages,json) ->
   %% length and stuff, yet should not be needed
   {[to_erl(jsx:decode(Buffer))|Messages],<<"">>};
 deserialize(Buffer,_Messages,json_batched) ->
-  Wamps = binary:split(Buffer,[?JSONB_SEPERATOR],[global,trim]),
+  Wamps = binary:split(Buffer,[?JSONB_SEPARATOR],[global,trim]),
   {to_erl_reverse(lists:foldl(fun(M,List) -> [jsx:decode(M)|List] end,[],Wamps)),<<"">>};
 deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_msgpack) ->
   <<Type:8,Len:24>> = << LenType:32 >>,
@@ -103,16 +105,26 @@ serialize(Erwa,Enc) when is_tuple(Erwa) ->
   WAMP = to_wamp(Erwa),
   serialize(WAMP,Enc);
 serialize(Msg,msgpack)  ->
-  msgpack:pack(Msg, [{format,jsx}]);
+  case msgpack:pack(Msg, [{format,jsx}]) of
+    {error,Reason} ->
+      error(wamper_msgpack,[Reason]);
+    M ->
+      M
+  end;
 serialize(Msg,msgpack_batched) ->
   serialize(Msg,raw_msgpack);
 serialize(Msg,json)  ->
   jsx:encode(Msg);
 serialize(Msg,json_batched) ->
   Enc = jsx:encode(Msg),
-  <<Enc/binary, ?JSONB_SEPERATOR/binary >>;
+  <<Enc/binary, ?JSONB_SEPARATOR/binary >>;
 serialize(Message,raw_msgpack) ->
-  Enc = msgpack:pack(Message, [{format,jsx}]),
+  Enc = case msgpack:pack(Message, [{format,jsx}]) of
+          {error,Reason} ->
+            error(Reason);
+          Msg ->
+            Msg
+        end,
   Len = byte_size(Enc),
   <<0:8,Len:24/unsigned-integer-big,Enc/binary>>;
 serialize(Message,raw_json) ->
@@ -767,22 +779,36 @@ roundtrip_test() ->
               {hello,<<"realm1">>,[]}
               ],
   Serializer = fun(Message,Res) ->
-
+                 ?debugFmt("current message is ~p~n",[Message]),
                  Encodings = [json,msgpack,raw_json,raw_msgpack,json_batched,msgpack_batched],
 
                  Check = fun(Enc,Bool) ->
+                           ?debugFmt("   current encoding is ~p~n",[Enc]),
                            EncMsg = serialize(Message,Enc),
                            DeEncMsg = deserialize(EncMsg,Enc) ,
+                           ?debugFmt("   result is ~p ",[DeEncMsg]),
                            case DeEncMsg of
-                             {[Message],<<"">>} -> Bool;
-                             _ -> false
+                             {[Message],<<"">>} ->
+                               ?debugFmt("   => okay (~p)~n ",[Bool]),
+                               Bool;
+                             _ ->
+                               ?debugFmt("   => false~n ",[Bool]),
+                               false
                            end
                          end,
                Res and lists:foldl(Check,true,Encodings)
                end,
 
+  ?debugFmt("messages are: ~p~n",[Messages]),
   true = lists:foldl(Serializer,true,Messages).
 
+
+msgpack_error_test() ->
+  M = [?HELLO,<<"realm1">>,[{<<"option_with">>,atom}]],
+  try serialize(M,msgpack)
+    catch _:_ ->
+      ok
+  end.
 
 
 -endif.
