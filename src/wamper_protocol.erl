@@ -526,6 +526,7 @@ error_to_wamp(Error) ->
                        {},
                        {goodbye_and_out,<<"wamp.error.goodbye_and_out">>},
                        {authorization_failed,<<"wamp.error.authorization_failed">>},
+                       {canceled,<<"wamp.error.canceled">>},
                        {close_realm,<<"wamp.error.close_realm">>},
                        {invalid_argument,<<"wamp.error.invalid_argument">>},
                        {invalid_uri,<<"wamp.error.invalid_uri">>},
