@@ -528,6 +528,7 @@ error_to_wamp(Error) ->
                        {authorization_failed,<<"wamp.error.authorization_failed">>},
                        {canceled,<<"wamp.error.canceled">>},
                        {close_realm,<<"wamp.error.close_realm">>},
+                       {disclose_not_allowed,<<"wamp.error.disclose_me.not_allowed">>},
                        {invalid_argument,<<"wamp.error.invalid_argument">>},
                        {invalid_uri,<<"wamp.error.invalid_uri">>},
                        {no_such_procedure,<<"wamp.error.no_such_procedure">>},
