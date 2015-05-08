@@ -44,7 +44,7 @@ deserialize(Buffer,Encoding) ->
 -spec deserialize(Buffer :: binary(), Messages :: list(), Encoding :: atom() ) -> {[Message :: term()], NewBuffer :: binary()}.
 
 deserialize(Buffer,Messages,msgpack) ->
-  case msgpack:unpack_stream(Buffer,[{format,jsx}]) of
+  case msgpack:unpack_stream(Buffer,[{format,map}]) of
     {error,incomplete} ->
       {to_erl_reverse(Messages),Buffer};
     {error,Reason} ->
@@ -57,16 +57,16 @@ deserialize(Buffer,Messages,msgpack_batched) ->
 deserialize(Buffer,Messages,json) ->
   %% is it possible to check the data here ?
   %% length and stuff, yet should not be needed
-  {[to_erl(jsx:decode(Buffer))|Messages],<<"">>};
+  {[to_erl(jsx:decode(Buffer,[return_maps]))|Messages],<<"">>};
 deserialize(Buffer,_Messages,json_batched) ->
   Wamps = binary:split(Buffer,[?JSONB_SEPARATOR],[global,trim]),
-  {to_erl_reverse(lists:foldl(fun(M,List) -> [jsx:decode(M)|List] end,[],Wamps)),<<"">>};
+  {to_erl_reverse(lists:foldl(fun(M,List) -> [jsx:decode(M,[return_maps])|List] end,[],Wamps)),<<"">>};
 deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_msgpack) ->
   <<Type:8,Len:24>> = << LenType:32 >>,
   case {Type,byte_size(Data) >= Len}of
     {0,true} ->
       <<Enc:Len/binary,NewBuffer/binary>> = Data,
-      {ok,Msg} = msgpack:unpack(Enc,[{format,jsx}]),
+      {ok,Msg} = msgpack:unpack(Enc,[{format,map}]),
       deserialize(NewBuffer,[Msg|Messages],raw_msgpack);
     {1,true} ->
       %Ping
@@ -84,7 +84,7 @@ deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,r
   case {Type,byte_size(Data) >= Len} of
     {0,true} ->
       <<Enc:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[jsx:decode(Enc)|Messages],raw_json);
+      deserialize(NewBuffer,[jsx:decode(Enc,[return_maps])|Messages],raw_json);
     {1,true} ->
       %Ping
       <<Ping:Len/binary,NewBuffer/binary>> = Data,
@@ -105,7 +105,7 @@ serialize(Erwa,Enc) when is_tuple(Erwa) ->
   WAMP = to_wamp(Erwa),
   serialize(WAMP,Enc);
 serialize(Msg,msgpack)  ->
-  case msgpack:pack(Msg, [{format,jsx}]) of
+  case msgpack:pack(Msg, [{format,map}]) of
     {error,Reason} ->
       error(wamper_msgpack,[Reason]);
     M ->
@@ -119,7 +119,7 @@ serialize(Msg,json_batched) ->
   Enc = jsx:encode(Msg),
   <<Enc/binary, ?JSONB_SEPARATOR/binary >>;
 serialize(Message,raw_msgpack) ->
-  Enc = case msgpack:pack(Message, [{format,jsx}]) of
+  Enc = case msgpack:pack(Message, [{format,map}]) of
           {error,Reason} ->
             error(Reason);
           Msg ->
@@ -131,8 +131,6 @@ serialize(Message,raw_json) ->
   Enc = jsx:encode(Message),
   Len = byte_size(Enc),
   <<0:8,Len:24/unsigned-integer-big,Enc/binary>>.
-
-
 
 
 
@@ -150,14 +148,14 @@ is_valid_uri(_) -> false.
 is_valid_id(Id) when is_integer(Id), Id >= 0, Id < 9007199254740992 -> true;
 is_valid_id(_) -> false.
 
-is_valid_dict(Dict) when is_list(Dict) -> true;
+is_valid_dict(Dict) when is_map(Dict) -> true;
 is_valid_dict(_) -> false.
 
-is_valid_arguments(List) when is_list(List) -> true;
+is_valid_arguments(Arguments) when is_list(Arguments) -> true;
 is_valid_arguments(undefined)  -> true;
 is_valid_arguments(_)  -> false.
 
-is_valid_argumentskw(List) when is_list(List) -> true;
+is_valid_argumentskw(ArgumentsKw) when is_map(ArgumentsKw) -> true;
 is_valid_argumentskw(undefined)  -> true;
 is_valid_argumentskw(_)  -> false.
 
@@ -200,7 +198,7 @@ is_valid_argumentskw(_)  -> false.
 to_erl([?HELLO,Realm,Details]) ->
   true = is_valid_uri(Realm),
   true = is_valid_dict(Details),
-  {hello,Realm,dict_to_erl(Details)};
+  {hello,Realm,hello_dict_to_erl(Details)};
 
 to_erl([?WELCOME,SessionId,Details]) ->
   true = is_valid_id(SessionId),
@@ -210,7 +208,7 @@ to_erl([?WELCOME,SessionId,Details]) ->
 to_erl([?ABORT,Details,Reason]) ->
   true = is_valid_dict(Details),
   true = is_valid_uri(Reason),
-  {abort,dict_to_erl(Details),Reason};
+  {abort,dict_to_erl(Details),try_error_to_erl(Reason)};
 
 
 to_erl([?CHALLENGE,<<"wampcra">>,Extra]) ->
@@ -240,21 +238,20 @@ to_erl([?ERROR,RequestType,RequestId,Details,Error,Arguments]) ->
   to_erl([?ERROR,RequestType,RequestId,Details,Error,Arguments,undefined]);
 
 to_erl([?ERROR,RequestType,RequestId,Details,Error,Arguments,ArgumentsKw]) when is_binary(Error) ->
-  to_erl([?ERROR,RequestType,RequestId,Details,error_to_erl(Error),Arguments,ArgumentsKw]);
-
-to_erl([?ERROR,?CALL,RequestId,Details,Error,Arguments,ArgumentsKw]) ->
   true = is_valid_id(RequestId),
   true = is_valid_dict(Details),
   true = is_valid_arguments(Arguments),
   true = is_valid_argumentskw(ArgumentsKw),
-  {error,call,RequestId,dict_to_erl(Details),Error,Arguments,ArgumentsKw};
-
-to_erl([?ERROR,?INVOCATION,RequestId,Details,Error,Arguments,ArgumentsKw]) ->
-  true = is_valid_id(RequestId),
-  true = is_valid_dict(Details),
-  true = is_valid_arguments(Arguments),
-  true = is_valid_argumentskw(ArgumentsKw),
-  {error,invocation,RequestId,dict_to_erl(Details),Error,Arguments,ArgumentsKw};
+  ErlType = case RequestType of
+              ?SUBSCRIBE -> subscribe;
+              ?UNSUBSCRIBE -> unsubscribe;
+              ?PUBLISH -> publish;
+              ?REGISTER -> register;
+              ?UNREGISTER -> unregister;
+              ?CALL -> call;
+              ?INVOCATION -> invocation
+            end,
+  {error,ErlType,RequestId,Details,try_error_to_erl(Error),Arguments,ArgumentsKw};
 
 to_erl([?PUBLISH,RequestId,Options,Topic]) ->
   to_erl([?PUBLISH,RequestId,Options,Topic,undefined,undefined]);
@@ -383,7 +380,7 @@ to_erl([?YIELD, RequestId, Options, Arguments, ArgumentsKw]) ->
 
 
 to_wamp({hello,Realm,Details}) ->
-  [?HELLO,Realm,dict_to_wamp(Details)];
+  [?HELLO,Realm,hello_dict_to_wamp(Details)];
 
 to_wamp({challenge,wampcra,Extra}) ->
    to_wamp({challenge,<<"wampcra">>,Extra});
@@ -415,9 +412,12 @@ to_wamp({goodbye,Details,Reason}) ->
 to_wamp({error,Origin,RequestId,Details,Error,Arguments,ArgumentsKw}) when is_atom(Error) ->
   to_wamp({error,Origin,RequestId,Details,error_to_wamp(Error),Arguments,ArgumentsKw});
 
-
+to_wamp({error,subscribe,RequestId,Details,Error,Arguments,ArgumentsKw}) ->
+  to_wamp({error,?SUBSCRIBE,RequestId,Details,Error,Arguments,ArgumentsKw});
 to_wamp({error,unsubscribe,RequestId,Details,Error,Arguments,ArgumentsKw}) ->
   to_wamp({error,?UNSUBSCRIBE,RequestId,Details,Error,Arguments,ArgumentsKw});
+to_wamp({error,publish,RequestId,Details,Error,Arguments,ArgumentsKw}) ->
+  to_wamp({error,?PUBLISH,RequestId,Details,Error,Arguments,ArgumentsKw});
 to_wamp({error,register,RequestId,Details,Error,Arguments,ArgumentsKw}) ->
   to_wamp({error,?REGISTER,RequestId,Details,Error,Arguments,ArgumentsKw});
 to_wamp({error,unregister,RequestId,Details,Error,Arguments,ArgumentsKw}) ->
@@ -516,6 +516,14 @@ to_wamp(shutdown)  ->
   shutdown.
 
 
+try_error_to_erl(Error) ->
+  case error_to_erl(Error) of
+    {unknown_error,Error} ->
+      Error;
+    ErlError ->
+      ErlError
+  end.
+
 error_to_erl(Error) ->
   convert_error(to_erl,Error).
 
@@ -572,13 +580,9 @@ convert_error(Direction,Error) ->
 
 
 
-dict_to_erl(Dict) ->
-  convert_dict(to_erl,Dict,[]).
 
-dict_to_wamp(Dict) ->
-  convert_dict(to_wamp,Dict,[]).
 
--define(DICT_MAPPING,[
+-define(HELLO_MAPPING, [
                       {agent,<<"agent">>,false},
                       {anonymous,<<"anonymous">>,false},
                       {authid,<<"authid">>,false},
@@ -629,18 +633,79 @@ dict_to_wamp(Dict) ->
                       {wildcard,<<"wildcard">>,false}
                       ]).
 
+-define(DICT_MAPPING,[
+                      {agent,<<"agent">>,false},
+                      {anonymous,<<"anonymous">>,false},
+                      {authid,<<"authid">>,false},
+                      {authmethod,<<"authmethod">>,false},
+                      {authmethods,<<"authmethods">>,list},
+                      {authprovider,<<"authprovider">>,false},
+                      {authrole,<<"authrole">>,false},
+                      {broker,<<"broker">>,dict},
+                      {call_canceling,<<"call_canceling">>,false},
+                      {call_timeout,<<"call_timeout">>,false},
+                      {call_trustlevels,<<"call_trustlevels">>,false},
+                      {callee,<<"callee">>,false},
+                      {callee_blackwhite_listing,<<"callee_blackwhite_listing">>,false},
+                      {caller,<<"caller">>,false},
+                      {caller_exclusion,<<"caller_exclusion">>,false},
+                      {caller_identification,<<"caller_identification">>,false},
+                      {challenge,<<"challenge">>,false},
+                      {dealer,<<"dealer">>,dict},
+                      {disclose_me,<<"disclose_me">>,false},
+                      {eligible,<<"eligible">>,false},
+                      {event_history,<<"event_history">>,false},
+                      {exclude,<<"exclude">>,false},
+                      {exclude_me,<<"exclude_me">>,false},
+                      {features,<<"features">>,dict},
+                      {iterations,<<"iterations">>,false},
+                      {keylen,<<"keylen">>,false},
+                      {match,<<"match">>,value},
+                      {partitioned_pubsub,<<"partitioned_pubsub">>,false},
+                      {partitioned_rpc,<<"partitioned_rpc">>,false},
+                      {pattern_based_registration,<<"pattern_based_registration">>,false},
+                      {pattern_based_subscription,<<"pattern_based_subscription">>,false},
+                      {prefix,<<"prefix">>,false},
+                      {progress,<<"progress">>,false},
+                      {progressive_call_results,<<"progressive_call_results">>,false},
+                      {publication_trustlevels,<<"publication_trustlevels">>,false},
+                      {publisher,<<"publisher">>,false},
+                      {publisher_exclusion,<<"publisher_exclusion">>,false},
+                      {publisher_identification,<<"publisher_identification">>,false},
+                      {receive_progress,<<"receive_progress">>,false},
+                      {roles,<<"roles">>,dict},
+                      {salt,<<"salt">>,false},
+                      {subscriber,<<"subscriber">>,dict},
+                      {subscriber_blackwhite_listing,<<"subscriber_blackwhite_listing">>,false},
+                      {subscriber_list,<<"subscriber_list">>,false},
+                      {subscriber_metaevents,<<"subscriber_metaevents">>,false},
+                      {timeout,<<"timeout">>,false},
+                      {wampcra,<<"wampcra">>,false},
+                      {wildcard,<<"wildcard">>,false}
+                      ]).
 
-convert_dict(to_wamp,[],[]) ->
-  [{}];
-convert_dict(to_wamp,[{}],[]) ->
-  [{}];
-convert_dict(to_erl,[{}],[]) ->
-  [];
-convert_dict(to_erl,[],[]) ->
-  [];
-convert_dict(_Direction,[],Converted) ->
-  lists:reverse(Converted);
-convert_dict(Direction,[{Key,Value}|T],Converted) ->
+
+dict_to_erl(Dict) ->
+  convert_dict(to_erl,Dict,?DICT_MAPPING).
+
+dict_to_wamp(Dict) ->
+  convert_dict(to_wamp,Dict,?DICT_MAPPING).
+
+hello_dict_to_erl(Dict) ->
+  convert_dict(to_erl,Dict,?HELLO_MAPPING).
+
+hello_dict_to_wamp(Dict) ->
+  convert_dict(to_wamp,Dict,?HELLO_MAPPING).
+
+convert_dict(Direction,Map,Mapping) ->
+  Folding = fun(Key, Value, InMap) ->
+              {ConvKey,ConvValue} = convert_key_value(Direction,Key,Value,Mapping),
+              maps:put(ConvKey,ConvValue,InMap)
+            end,
+  maps:fold(Folding,#{},Map).
+
+
+convert_key_value(Direction,Key,Value,Mapping) ->
   KeyPos =
     case Direction of
       to_erl -> 2;
@@ -648,15 +713,15 @@ convert_dict(Direction,[{Key,Value}|T],Converted) ->
     end,
 
   {ErlKey,WampKey,Deep} =
-    case lists:keyfind(Key,KeyPos,?DICT_MAPPING) of
+    case lists:keyfind(Key,KeyPos,Mapping) of
       {Ek,Wk,D} -> {Ek,Wk,D};
       false -> {Key,Key,false}
     end,
   ConvValue =
     case Deep of
-      dict -> convert_dict(Direction,Value,[]);
-      list -> convert_list(Direction,Value,[]);
-      value -> convert_value(Direction,Value);
+      dict -> convert_dict(Direction,Value,Mapping);
+      list -> convert_list(Direction,Value,[],Mapping);
+      value -> convert_value(Direction,Value,Mapping);
       _ -> Value
     end,
   ConvKey =
@@ -664,21 +729,21 @@ convert_dict(Direction,[{Key,Value}|T],Converted) ->
       to_erl -> ErlKey;
       to_wamp -> WampKey
     end,
-  convert_dict(Direction,T,[{ConvKey,ConvValue}|Converted]).
+  {ConvKey,ConvValue}.
 
 
-convert_list(_,[],[]) ->
+convert_list(_,[],[],_) ->
   [];
-convert_list(_,[],Converted) ->
+convert_list(_,[],Converted,_) ->
   lists:reverse(Converted);
-convert_list(Direction,[Key|T],Converted) ->
+convert_list(Direction,[Key|T],Converted,Mapping) ->
   KeyPos =
     case Direction of
       to_erl -> 2;
       to_wamp -> 1
     end,
   {ErlKey,WampKey} =
-    case lists:keyfind(Key,KeyPos,?DICT_MAPPING) of
+    case lists:keyfind(Key,KeyPos,Mapping) of
       {Ek,Wk,_} -> {Ek,Wk};
       false -> {Key,Key}
     end,
@@ -687,18 +752,18 @@ convert_list(Direction,[Key|T],Converted) ->
       to_erl -> ErlKey;
       to_wamp -> WampKey
     end,
-  convert_list(Direction,T,[ConvKey|Converted]).
+  convert_list(Direction,T,[ConvKey|Converted],Mapping).
 
 
 
-convert_value(Direction,Value) ->
+convert_value(Direction,Value,Mapping) ->
   ValPos =
     case Direction of
       to_erl -> 2;
       to_wamp -> 1
     end,
   {ErlVal,WampVal} =
-    case lists:keyfind(Value,ValPos,?DICT_MAPPING) of
+    case lists:keyfind(Value,ValPos,Mapping) of
       {EV,WV,_} -> {EV,WV};
       false -> {Value,Value}
     end,
@@ -718,37 +783,39 @@ validation_test() ->
   false = is_valid_id(0.1),
 
   true = is_valid_uri(<<"wamp.ws">>),
-  true = is_valid_dict([]),
+  false = is_valid_dict([]),
+  true = is_valid_dict(#{}),
 
   true = is_valid_arguments([]),
-  true = is_valid_argumentskw([]),
+  false = is_valid_argumentskw([]),
+  true = is_valid_argumentskw(#{}),
   ok.
 
 
 
 hello_json_test() ->
-  M = [?HELLO,<<"realm1">>,[{}]],
+  M = [?HELLO,<<"realm1">>,#{}],
   S = serialize(M,json),
   D = deserialize(S,json),
-  D = {[{hello,<<"realm1">>,[]}],<<"">>}.
+  D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 hello_json_batched_test() ->
-  M = [?HELLO,<<"realm1">>,[{}]],
+  M = [?HELLO,<<"realm1">>,#{}],
   S = serialize(M,json_batched),
   D = deserialize(S,json_batched),
-  D = {[{hello,<<"realm1">>,[]}],<<"">>}.
+  D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 hello_msgpack_test() ->
-  M = [?HELLO,<<"realm1">>,[{}]],
+  M = [?HELLO,<<"realm1">>,#{}],
   S = serialize(M,msgpack),
   D = deserialize(S,msgpack),
-  D = {[{hello,<<"realm1">>,[]}],<<"">>}.
+  D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 hello_msgpack_batched_test() ->
-  M = [?HELLO,<<"realm1">>,[{}]],
+  M = [?HELLO,<<"realm1">>,#{}],
   S = serialize(M,msgpack_batched),
   D = deserialize(S,msgpack_batched),
-  D = {[{hello,<<"realm1">>,[]}],<<"">>}.
+  D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 
 
@@ -779,30 +846,54 @@ hello_msgpack_deserialize_test() ->
 
 roundtrip_test() ->
   Messages = [
-              {hello,<<"realm1">>,[]}
+              {hello,<<"realm1">>,#{}},
+              {welcome,398475,#{}},
+              {abort,#{},invalid_argument},
+              {goodbye,#{},goodbye_and_out},
+              {publish,2343,#{exclude_me=>false},<<"just_some_uri">>,undefined,undefined},
+              {error,publish,9873,#{},invalid_argument,undefined,undefined},
+              {published,209384,092834},
+              {subscribe,9834,#{},<<"event_i_need">>},
+              {error,subscribe,9873,#{},invalid_argument,undefined,undefined},
+              {subscribed,9283,9898},
+              {unsubscribe,2333,23400},
+              {error,unsubscribe,9873,#{},invalid_argument,undefined,undefined},
+              {unsubscribed,28777},
+              {event,28882,292839,#{publisher => 3980999},[<<"some information">>],undefined},
+              {call,298374,#{disclose_me=>true},<<"some_rpc">>,[3,true,<<"hello world!">>],#{<<"hello">> => <<"world">>}},
+              {error,call,982734,#{},invalid_uri,undefined,undefined},
+              {result,98273,#{},undefined,undefined},
+              {register,20938,#{},<<"some_rpc">>},
+              {error,register,9873,#{},invalid_argument,undefined,undefined},
+              {registered,9827988,234},
+              {unregister,209384,20938999},
+              {error,unregister,9873,#{},invalid_argument,undefined,undefined},
+              {unregistered,9283000},
+              {invocation,328,23444,#{},[<<"Willi">>],undefined},
+              {error,invocation,9873,#{},invalid_argument,undefined,undefined},
+              {yield,2987,#{},undefined,undefined}
+
+
               ],
   Serializer = fun(Message,Res) ->
-                 ?debugFmt("current message is ~p~n",[Message]),
                  Encodings = [json,msgpack,raw_json,raw_msgpack,json_batched,msgpack_batched],
-
+                 ?debugFmt("~p",[Message]),
                  Check = fun(Enc,Bool) ->
-                           ?debugFmt("   current encoding is ~p~n",[Enc]),
+                           ?debugFmt("   ~p: ",[Enc]),
                            EncMsg = serialize(Message,Enc),
+                           ?debugFmt("   <- ~p",[EncMsg]),
                            DeEncMsg = deserialize(EncMsg,Enc) ,
-                           ?debugFmt("   result is ~p ",[DeEncMsg]),
                            case DeEncMsg of
                              {[Message],<<"">>} ->
-                               ?debugFmt("   => okay (~p)~n ",[Bool]),
+                               ?debugFmt("   -> ~p, okay~n",[DeEncMsg]),
                                Bool;
                              _ ->
-                               ?debugFmt("   => false~n ",[Bool]),
+                               ?debugFmt("   -> ~p *** ERROR ***",[DeEncMsg]),
                                false
                            end
                          end,
-               Res and lists:foldl(Check,true,Encodings)
+                 Res and lists:foldl(Check,true,Encodings)
                end,
-
-  ?debugFmt("messages are: ~p~n",[Messages]),
   true = lists:foldl(Serializer,true,Messages).
 
 
