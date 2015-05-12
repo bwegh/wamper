@@ -142,7 +142,8 @@ to_erl_reverse([],List) ->
 to_erl_reverse([H|T],Messages) ->
   to_erl_reverse(T,[to_erl(H)|Messages]).
 
-is_valid_uri(Uri) when is_binary(Uri) -> true;
+is_valid_uri(Uri) when is_binary(Uri) ->
+  true;
 is_valid_uri(_) -> false.
 
 is_valid_id(Id) when is_integer(Id), Id >= 0, Id < 9007199254740992 -> true;
@@ -697,7 +698,11 @@ hello_dict_to_erl(Dict) ->
 hello_dict_to_wamp(Dict) ->
   convert_dict(to_wamp,Dict,?HELLO_MAPPING).
 
-convert_dict(Direction,Map,Mapping) ->
+convert_dict(Direction,Map,Mapping) when is_list(Map) ->
+  warning("the use of proplists is deprecated~nProplist: ~p~n",[Map]),
+  RealMap = maps:from_list(Map),
+  convert_dict(Direction,RealMap,Mapping);
+convert_dict(Direction,Map,Mapping)  ->
   Folding = fun(Key, Value, InMap) ->
               {ConvKey,ConvValue} = convert_key_value(Direction,Key,Value,Mapping),
               maps:put(ConvKey,ConvValue,InMap)
@@ -773,7 +778,16 @@ convert_value(Direction,Value,Mapping) ->
   end.
 
 
--ifdef(TEST).
+-ifndef(TEST).
+
+warning(Format,Data) ->
+  io:format(Format,Data).
+
+-else.
+
+warning(Format,Data) ->
+  ct:print(Format,Data).
+
 
 validation_test() ->
   true = is_valid_id(0),
@@ -877,18 +891,18 @@ roundtrip_test() ->
               ],
   Serializer = fun(Message,Res) ->
                  Encodings = [json,msgpack,raw_json,raw_msgpack,json_batched,msgpack_batched],
-                 ?debugFmt("~p",[Message]),
+                 ct:log("~p",[Message]),
                  Check = fun(Enc,Bool) ->
-                           ?debugFmt("   ~p: ",[Enc]),
+                           ct:log("   ~p: ",[Enc]),
                            EncMsg = serialize(Message,Enc),
-                           ?debugFmt("   <- ~p",[EncMsg]),
+                           ct:log("   <- ~p",[EncMsg]),
                            DeEncMsg = deserialize(EncMsg,Enc) ,
                            case DeEncMsg of
                              {[Message],<<"">>} ->
-                               ?debugFmt("   -> ~p, okay~n",[DeEncMsg]),
+                               ct:log("   -> ~p, okay~n",[DeEncMsg]),
                                Bool;
                              _ ->
-                               ?debugFmt("   -> ~p *** ERROR ***",[DeEncMsg]),
+                               ct:log("   -> ~p *** ERROR ***",[DeEncMsg]),
                                false
                            end
                          end,
