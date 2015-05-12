@@ -595,9 +595,9 @@ convert_error(Direction,Error) ->
                       {call_canceling,<<"call_canceling">>,false},
                       {call_timeout,<<"call_timeout">>,false},
                       {call_trustlevels,<<"call_trustlevels">>,false},
-                      {callee,<<"callee">>,false},
+                      {callee,<<"callee">>,dict},
                       {callee_blackwhite_listing,<<"callee_blackwhite_listing">>,false},
-                      {caller,<<"caller">>,false},
+                      {caller,<<"caller">>,dict},
                       {caller_exclusion,<<"caller_exclusion">>,false},
                       {caller_identification,<<"caller_identification">>,false},
                       {challenge,<<"challenge">>,false},
@@ -861,7 +861,7 @@ hello_msgpack_deserialize_test() ->
 
 roundtrip_test() ->
   Messages = [
-              {hello,<<"realm1">>,#{}},
+              {hello,<<"realm1">>,#{roles => #{callee => #{features => #{}}, caller => #{ features => #{}} } } },
               {welcome,398475,#{}},
               {abort,#{},invalid_argument},
               {goodbye,#{},goodbye_and_out},
