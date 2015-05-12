@@ -786,6 +786,7 @@ warning(Format,Data) ->
 -else.
 
 warning(Format,Data) ->
+  ct:log(Format,Data),
   ct:print(Format,Data).
 
 
