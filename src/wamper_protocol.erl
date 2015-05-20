@@ -194,17 +194,10 @@ is_valid_argumentskw(_)  -> false.
 
 
 
-
 to_erl([?HELLO,Realm,Details]) ->
   true = is_valid_uri(Realm),
   true = is_valid_dict(Details),
-  {hello,Realm,hello_dict_to_erl(Details),#{}};
-
-to_erl([?HELLO,Realm,Details,Extra]) ->
-  true = is_valid_uri(Realm),
-  true = is_valid_dict(Details),
-  true = is_valid_dict(Extra),
-  {hello,Realm,hello_dict_to_erl(Details),dict_to_erl(Extra)};
+  {hello,Realm,hello_dict_to_erl(Details)};
 
 to_erl([?WELCOME,SessionId,Details]) ->
   true = is_valid_id(SessionId),
@@ -385,8 +378,8 @@ to_erl([?YIELD, RequestId, Options, Arguments, ArgumentsKw]) ->
 
 
 
-to_wamp({hello,Realm,Details,Extra}) ->
-  [?HELLO,Realm,hello_dict_to_wamp(Details),dict_to_wamp(Extra)];
+to_wamp({hello,Realm,Details}) ->
+  [?HELLO,Realm,hello_dict_to_wamp(Details)];
 
 to_wamp({challenge,wampcra,Extra}) ->
    to_wamp({challenge,<<"wampcra">>,Extra});
@@ -814,33 +807,33 @@ validation_test() ->
 
 
 hello_json_test() ->
-  M = [?HELLO,<<"realm1">>,#{},#{}],
+  M = [?HELLO,<<"realm1">>,#{}],
   S = serialize(M,json),
   D = deserialize(S,json),
-  D = {[{hello,<<"realm1">>,#{},#{}}],<<"">>}.
+  D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 hello_json_batched_test() ->
-  M = [?HELLO,<<"realm1">>,#{},#{}],
+  M = [?HELLO,<<"realm1">>,#{}],
   S = serialize(M,json_batched),
   D = deserialize(S,json_batched),
-  D = {[{hello,<<"realm1">>,#{},#{}}],<<"">>}.
+  D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 hello_msgpack_test() ->
-  M = [?HELLO,<<"realm1">>,#{},#{}],
+  M = [?HELLO,<<"realm1">>,#{}],
   S = serialize(M,msgpack),
   D = deserialize(S,msgpack),
-  D = {[{hello,<<"realm1">>,#{},#{}}],<<"">>}.
+  D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 hello_msgpack_batched_test() ->
-  M = [?HELLO,<<"realm1">>,#{},#{}],
+  M = [?HELLO,<<"realm1">>,#{}],
   S = serialize(M,msgpack_batched),
   D = deserialize(S,msgpack_batched),
-  D = {[{hello,<<"realm1">>,#{},#{}}],<<"">>}.
+  D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 
 roundtrip_test() ->
   Messages = [
-              {hello,<<"realm1">>,#{roles => #{callee => #{features => #{}}, caller => #{ features => #{}} } },#{} },
+              {hello,<<"realm1">>,#{roles => #{callee => #{features => #{}}, caller => #{ features => #{}} } }},
               {welcome,398475,#{}},
               {abort,#{},invalid_argument},
               {goodbye,#{},goodbye_and_out},
