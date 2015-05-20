@@ -195,6 +195,10 @@ is_valid_argumentskw(_)  -> false.
 
 
 
+to_erl([?HELLO,Realm,Details]) ->
+  true = is_valid_uri(Realm),
+  true = is_valid_dict(Details),
+  {hello,Realm,hello_dict_to_erl(Details),#{}};
 
 to_erl([?HELLO,Realm,Details,Extra]) ->
   true = is_valid_uri(Realm),
