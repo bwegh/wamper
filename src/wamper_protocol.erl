@@ -200,8 +200,6 @@ is_valid_argumentskw(_)  -> false.
 
 
 
-
-
 to_erl([?HELLO,Realm,Details]) ->
   true = is_valid_uri(Realm),
   true = is_valid_dict(Details),
@@ -616,9 +614,9 @@ hello_dict_to_wamp(Dict) ->
                       {call_canceling,<<"call_canceling">>,false},
                       {call_timeout,<<"call_timeout">>,false},
                       {call_trustlevels,<<"call_trustlevels">>,false},
-                      {callee,<<"callee">>,false},
+                      {callee,<<"callee">>,dict},
                       {callee_blackwhite_listing,<<"callee_blackwhite_listing">>,false},
-                      {caller,<<"caller">>,false},
+                      {caller,<<"caller">>,dict},
                       {caller_exclusion,<<"caller_exclusion">>,false},
                       {caller_identification,<<"caller_identification">>,false},
                       {challenge,<<"challenge">>,false},
@@ -845,35 +843,9 @@ hello_msgpack_batched_test() ->
   D = {[{hello,<<"realm1">>,#{}}],<<"">>}.
 
 
-
-
-hello_msgpack_deserialize_test() ->
-  Data = <<147,1,166,114,101,97,108,109,49,130,165,97,103,101,110,
-                      116,175,87,97,109,112,121,46,106,115,32,118,49,46,48,46,
-                      51,165,114,111,108,101,115,132,169,112,117,98,108,105,
-                      115,104,101,114,129,168,102,101,97,116,117,114,101,115,
-                      131,189,115,117,98,115,99,114,105,98,101,114,95,98,108,
-                      97,99,107,119,104,105,116,101,95,108,105,115,116,105,110,
-                      103,195,179,112,117,98,108,105,115,104,101,114,95,101,
-                      120,99,108,117,115,105,111,110,195,184,112,117,98,108,
-                      105,115,104,101,114,95,105,100,101,110,116,105,102,105,
-                      99,97,116,105,111,110,195,170,115,117,98,115,99,114,105,
-                      98,101,114,128,166,99,97,108,108,101,114,129,168,102,101,
-                      97,116,117,114,101,115,131,185,99,97,108,108,101,101,95,
-                      98,108,97,99,107,119,104,105,116,101,95,108,105,115,116,
-                      105,110,103,195,176,99,97,108,108,101,114,95,101,120,99,
-                      108,117,115,105,111,110,195,181,99,97,108,108,101,114,95,
-                      105,100,101,110,116,105,102,105,99,97,116,105,111,110,
-                      195,166,99,97,108,108,101,101,129,168,102,101,97,116,117,
-                      114,101,115,129,181,99,97,108,108,101,114,95,105,100,101,
-                      110,116,105,102,105,99,97,116,105,111,110,195>>,
-  {[{hello,<<"realm1">>,_}],_} = deserialize(Data,msgpack).
-
-
-
 roundtrip_test() ->
   Messages = [
-              {hello,<<"realm1">>,#{}},
+              {hello,<<"realm1">>,#{roles => #{callee => #{features => #{}}, caller => #{ features => #{}} } }},
               {welcome,398475,#{}},
               {abort,#{},invalid_argument},
               {goodbye,#{},goodbye_and_out},
