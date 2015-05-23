@@ -29,8 +29,10 @@
 -export([to_erl/1]).
 
 -export([is_valid_uri/1]).
+-export([is_valid_uri/2]).
 -export([is_valid_id/1]).
 -export([is_valid_dict/1]).
+-export([is_valid_dict/2]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -39,65 +41,60 @@
 -define(JSONB_SEPARATOR,<<24>>).
 
 deserialize(Buffer,Encoding) ->
-  deserialize(Buffer,[],Encoding).
+  case lists:member(Encoding,[raw_msgpack,raw_json,msgpack_batched]) of
+    true -> deserialize_binary(Buffer,[],Encoding);
+    _ -> deserialize_text(Buffer,[],Encoding)
+  end.
 
--spec deserialize(Buffer :: binary(), Messages :: list(), Encoding :: atom() ) -> {[Message :: term()], NewBuffer :: binary()}.
 
-deserialize(Buffer,Messages,msgpack) ->
+
+-spec deserialize_text(Buffer :: binary(), Messages :: list(), Encoding :: atom() ) -> {[Message :: term()], NewBuffer :: binary()}.
+deserialize_text(Buffer,Messages,msgpack) ->
   case msgpack:unpack_stream(Buffer,[{format,map}]) of
     {error,incomplete} ->
       {to_erl_reverse(Messages),Buffer};
     {error,Reason} ->
       error(Reason);
     {Msg,NewBuffer} ->
-      deserialize(NewBuffer,[Msg|Messages],msgpack)
+      deserialize_text(NewBuffer,[Msg|Messages],msgpack)
   end;
-deserialize(Buffer,Messages,msgpack_batched) ->
-  deserialize(Buffer,Messages,raw_msgpack);
-deserialize(Buffer,Messages,json) ->
+deserialize_text(Buffer,Messages,json) ->
   %% is it possible to check the data here ?
   %% length and stuff, yet should not be needed
   {[to_erl(jsx:decode(Buffer,[return_maps]))|Messages],<<"">>};
-deserialize(Buffer,_Messages,json_batched) ->
+deserialize_text(Buffer,_Messages,json_batched) ->
   Wamps = binary:split(Buffer,[?JSONB_SEPARATOR],[global,trim]),
   {to_erl_reverse(lists:foldl(fun(M,List) -> [jsx:decode(M,[return_maps])|List] end,[],Wamps)),<<"">>};
-deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_msgpack) ->
+deserialize_text(Buffer,Messages,_) ->
+  {to_erl_reverse(Messages),Buffer}.
+
+
+-spec deserialize_binary(Buffer :: binary(), Messages :: list(), Encoding :: atom() ) -> {[Message :: term()], NewBuffer :: binary()}.
+deserialize_binary(<<LenType:32/unsigned-integer-big,Data/binary>> = Buffer,Messages, Enc)  ->
   <<Type:8,Len:24>> = << LenType:32 >>,
   case {Type,byte_size(Data) >= Len}of
     {0,true} ->
-      <<Enc:Len/binary,NewBuffer/binary>> = Data,
-      {ok,Msg} = msgpack:unpack(Enc,[{format,map}]),
-      deserialize(NewBuffer,[Msg|Messages],raw_msgpack);
+      <<EncMsg:Len/binary,NewBuffer/binary>> = Data,
+      {ok,Msg} = case Enc of
+                   raw_json -> {ok,jsx:decode(EncMsg,[return_maps])};
+                   _ -> msgpack:unpack(EncMsg,[{format,map}])
+                 end,
+      deserialize_binary(NewBuffer,[Msg|Messages],Enc);
     {1,true} ->
       %Ping
       <<Ping:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[{ping,Ping}|Messages],raw_msgpack);
+      deserialize_binary(NewBuffer,[{ping,Ping}|Messages],Enc);
     {2,true} ->
       <<Pong:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[{pong,Pong}|Messages],raw_msgpack);
+      deserialize_binary(NewBuffer,[{pong,Pong}|Messages],Enc);
       %Pong
     {_,false} ->
       {to_erl_reverse(Messages),Buffer}
   end;
-deserialize(<<LenType:32/unsigned-integer-big,Data/binary>>  = Buffer,Messages,raw_json) ->
-  <<Type:8,Len:24>> = << LenType:32 >>,
-  case {Type,byte_size(Data) >= Len} of
-    {0,true} ->
-      <<Enc:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[jsx:decode(Enc,[return_maps])|Messages],raw_json);
-    {1,true} ->
-      %Ping
-      <<Ping:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[{ping,Ping}|Messages],raw_json);
-    {2,true} ->
-      <<Pong:Len/binary,NewBuffer/binary>> = Data,
-      deserialize(NewBuffer,[{pong,Pong}|Messages],raw_json);
-      %Pong
-    {_,false} ->
-      {to_erl_reverse(Messages),Buffer}
-  end;
-deserialize(Buffer,Messages,_) ->
+deserialize_binary(Buffer,Messages,_) ->
   {to_erl_reverse(Messages),Buffer}.
+
+
 
 
 
@@ -143,14 +140,23 @@ to_erl_reverse([H|T],Messages) ->
   to_erl_reverse(T,[to_erl(H)|Messages]).
 
 is_valid_uri(Uri) when is_binary(Uri) ->
+  is_valid_uri(Uri,default).
+
+
+is_valid_uri(Uri, _Type) when is_binary(Uri) ->
   true;
-is_valid_uri(_) -> false.
+is_valid_uri(_, _) ->
+  false.
+
 
 is_valid_id(Id) when is_integer(Id), Id >= 0, Id < 9007199254740992 -> true;
 is_valid_id(_) -> false.
 
-is_valid_dict(Dict) when is_map(Dict) -> true;
-is_valid_dict(_) -> false.
+is_valid_dict(Dict) ->
+  is_valid_dict(Dict,default).
+
+is_valid_dict(Dict,_Type) when is_map(Dict) -> true;
+is_valid_dict(_,_) -> false.
 
 is_valid_arguments(Arguments) when is_list(Arguments) -> true;
 is_valid_arguments(undefined)  -> true;
@@ -583,6 +589,21 @@ convert_error(Direction,Error) ->
 
 
 
+
+
+
+dict_to_erl(Dict) ->
+  convert_dict(default,Dict,to_erl).
+
+dict_to_wamp(Dict) ->
+  convert_dict(default,Dict,to_wamp).
+
+hello_dict_to_erl(Dict) ->
+  convert_dict(hello,Dict,to_erl).
+
+hello_dict_to_wamp(Dict) ->
+  convert_dict(hello,Dict,to_wamp).
+
 -define(HELLO_MAPPING, [
                       {agent,<<"agent">>,false},
                       {anonymous,<<"anonymous">>,false},
@@ -685,24 +706,15 @@ convert_error(Direction,Error) ->
                       {wildcard,<<"wildcard">>,false}
                       ]).
 
-
-dict_to_erl(Dict) ->
-  convert_dict(to_erl,Dict,?DICT_MAPPING).
-
-dict_to_wamp(Dict) ->
-  convert_dict(to_wamp,Dict,?DICT_MAPPING).
-
-hello_dict_to_erl(Dict) ->
-  convert_dict(to_erl,Dict,?HELLO_MAPPING).
-
-hello_dict_to_wamp(Dict) ->
-  convert_dict(to_wamp,Dict,?HELLO_MAPPING).
-
-convert_dict(Direction,Map,Mapping) when is_list(Map) ->
-  warning("the use of proplists is deprecated~nProplist: ~p~n",[Map]),
-  RealMap = maps:from_list(Map),
-  convert_dict(Direction,RealMap,Mapping);
-convert_dict(Direction,Map,Mapping)  ->
+convert_dict(Type,PropList,Direction) when is_list(PropList) ->
+  warning("the use of proplists is deprecated~nProplist: ~p~n",[PropList]),
+  Map = maps:from_list(PropList),
+  convert_dict(Type,Map,Direction);
+convert_dict(Type,Map,Direction)  ->
+  Mapping = case Type of
+              hello -> ?HELLO_MAPPING;
+              _ -> ?DICT_MAPPING
+            end,
   Folding = fun(Key, Value, InMap) ->
               {ConvKey,ConvValue} = convert_key_value(Direction,Key,Value,Mapping),
               maps:put(ConvKey,ConvValue,InMap)
@@ -724,7 +736,7 @@ convert_key_value(Direction,Key,Value,Mapping) ->
     end,
   ConvValue =
     case Deep of
-      dict -> convert_dict(Direction,Value,Mapping);
+      dict -> convert_dict(ErlKey,Value,Direction);
       list -> convert_list(Direction,Value,[],Mapping);
       value -> convert_value(Direction,Value,Mapping);
       _ -> Value
