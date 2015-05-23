@@ -711,6 +711,7 @@ convert_dict(Type,PropList,Direction) when is_list(PropList) ->
 convert_dict(Type,Map,Direction)  ->
   Mapping = case Type of
               hello -> ?HELLO_MAPPING;
+              roles -> ?HELLO_MAPPING;
               _ -> ?DICT_MAPPING
             end,
   Folding = fun(Key, Value, InMap) ->
