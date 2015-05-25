@@ -41,7 +41,7 @@
 -define(JSONB_SEPARATOR,<<24>>).
 
 deserialize(Buffer,Encoding) ->
-  case lists:member(Encoding,[raw_msgpack,raw_json,msgpack_batched]) of
+  case lists:member(Encoding,[raw_msgpack,raw_json,msgpack_batched,raw_erlbin]) of
     true -> deserialize_binary(Buffer,[],Encoding);
     _ -> deserialize_text(Buffer,[],Encoding)
   end.
@@ -49,6 +49,8 @@ deserialize(Buffer,Encoding) ->
 
 
 -spec deserialize_text(Buffer :: binary(), Messages :: list(), Encoding :: atom() ) -> {[Message :: term()], NewBuffer :: binary()}.
+deserialize_text(Buffer,Messages,erlbin) ->
+  {[binary_to_term(Buffer)],<<"">>};
 deserialize_text(Buffer,Messages,msgpack) ->
   case msgpack:unpack_stream(Buffer,[{format,map}]) of
     {error,incomplete} ->
@@ -76,6 +78,7 @@ deserialize_binary(<<LenType:32/unsigned-integer-big,Data/binary>> = Buffer,Mess
     {0,true} ->
       <<EncMsg:Len/binary,NewBuffer/binary>> = Data,
       {ok,Msg} = case Enc of
+                   raw_erlbin -> {ok, binary_to_term(EncMsg)};
                    raw_json -> {ok,jsx:decode(EncMsg,[return_maps])};
                    _ -> msgpack:unpack(EncMsg,[{format,map}])
                  end,
@@ -89,46 +92,61 @@ deserialize_binary(<<LenType:32/unsigned-integer-big,Data/binary>> = Buffer,Mess
       deserialize_binary(NewBuffer,[{pong,Pong}|Messages],Enc);
       %Pong
     {_,false} ->
-      {to_erl_reverse(Messages),Buffer}
+      case Enc of
+        raw_erlbin -> {lists:reverse(Messages),Buffer};
+        _ -> {to_erl_reverse(Messages),Buffer}
+      end
   end;
-deserialize_binary(Buffer,Messages,_) ->
-  {to_erl_reverse(Messages),Buffer}.
+deserialize_binary(Buffer,Messages,Enc) ->
+  case Enc of
+        raw_erlbin -> {lists:reverse(Messages),Buffer};
+        _ -> {to_erl_reverse(Messages),Buffer}
+  end.
 
 
 
+serialize(Erwa,Enc) ->
+  WAMP = case {lists:member(Enc,[erlbin,raw_erlbin]), is_tuple(Erwa)} of
+           {false,true} -> to_wamp(Erwa);
+           _ -> Erwa
+         end,
+  serialize_message(WAMP,Enc).
 
-
-serialize(Erwa,Enc) when is_tuple(Erwa) ->
-  WAMP = to_wamp(Erwa),
-  serialize(WAMP,Enc);
-serialize(Msg,msgpack)  ->
+serialize_message(Msg,msgpack)  ->
   case msgpack:pack(Msg, [{format,map}]) of
     {error,Reason} ->
       error(wamper_msgpack,[Reason]);
     M ->
       M
   end;
-serialize(Msg,msgpack_batched) ->
+serialize_message(Msg,erlbin)  ->
+  term_to_binary(Msg);
+serialize_message(Msg,msgpack_batched) ->
   serialize(Msg,raw_msgpack);
-serialize(Msg,json)  ->
+serialize_message(Msg,json)  ->
   jsx:encode(Msg);
-serialize(Msg,json_batched) ->
+serialize_message(Msg,json_batched) ->
   Enc = jsx:encode(Msg),
   <<Enc/binary, ?JSONB_SEPARATOR/binary >>;
-serialize(Message,raw_msgpack) ->
+serialize_message(Message,raw_erlbin) ->
+  Enc = term_to_binary(Message),
+  add_binary_frame(Enc);
+serialize_message(Message,raw_msgpack) ->
   Enc = case msgpack:pack(Message, [{format,map}]) of
           {error,Reason} ->
             error(Reason);
           Msg ->
             Msg
         end,
-  Len = byte_size(Enc),
-  <<0:8,Len:24/unsigned-integer-big,Enc/binary>>;
-serialize(Message,raw_json) ->
+  add_binary_frame(Enc);
+serialize_message(Message,raw_json) ->
   Enc = jsx:encode(Message),
+  add_binary_frame(Enc).
+
+
+add_binary_frame(Enc) ->
   Len = byte_size(Enc),
   <<0:8,Len:24/unsigned-integer-big,Enc/binary>>.
-
 
 
 to_erl_reverse(List)->
@@ -876,7 +894,7 @@ roundtrip_test() ->
 
               ],
   Serializer = fun(Message,Res) ->
-                 Encodings = [json,msgpack,raw_json,raw_msgpack,json_batched,msgpack_batched],
+                 Encodings = [json,msgpack,erlbin,raw_json,raw_msgpack,raw_erlbin,json_batched,msgpack_batched],
                  ct:log("~p",[Message]),
                  Check = fun(Enc,Bool) ->
                            ct:log("   ~p: ",[Enc]),
