@@ -50,7 +50,9 @@ deserialize(Buffer,Encoding) ->
 
 -spec deserialize_text(Buffer :: binary(), Messages :: list(), Encoding :: atom() ) -> {[Message :: term()], NewBuffer :: binary()}.
 deserialize_text(Buffer,Messages,erlbin) ->
-  {[binary_to_term(Buffer)],<<"">>};
+  Msg = binary_to_term(Buffer),
+  true = is_valid_message(Msg),
+  {[Msg|Messages],<<"">>};
 deserialize_text(Buffer,Messages,msgpack) ->
   case msgpack:unpack_stream(Buffer,[{format,map}]) of
     {error,incomplete} ->
@@ -78,9 +80,14 @@ deserialize_binary(<<LenType:32/unsigned-integer-big,Data/binary>> = Buffer,Mess
     {0,true} ->
       <<EncMsg:Len/binary,NewBuffer/binary>> = Data,
       {ok,Msg} = case Enc of
-                   raw_erlbin -> {ok, binary_to_term(EncMsg)};
-                   raw_json -> {ok,jsx:decode(EncMsg,[return_maps])};
-                   _ -> msgpack:unpack(EncMsg,[{format,map}])
+                   raw_erlbin ->
+                     DecMsg = binary_to_term(EncMsg),
+                     true = is_valid_message(DecMsg),
+                     {ok, DecMsg};
+                   raw_json ->
+                     {ok,jsx:decode(EncMsg,[return_maps])};
+                   _ ->
+                     msgpack:unpack(EncMsg,[{format,map}])
                  end,
       deserialize_binary(NewBuffer,[Msg|Messages],Enc);
     {1,true} ->
@@ -163,6 +170,8 @@ is_valid_uri(Uri) when is_binary(Uri) ->
 
 is_valid_uri(Uri, _Type) when is_binary(Uri) ->
   true;
+is_valid_uri(Uri, _Type) when is_atom(Uri) ->
+  true;
 is_valid_uri(_, _) ->
   false.
 
@@ -183,6 +192,178 @@ is_valid_arguments(_)  -> false.
 is_valid_argumentskw(ArgumentsKw) when is_map(ArgumentsKw) -> true;
 is_valid_argumentskw(undefined)  -> true;
 is_valid_argumentskw(_)  -> false.
+
+
+-spec is_valid_message(term()) -> true | false.
+is_valid_message({hello,Realm,Details}) ->
+  true = is_valid_uri(Realm),
+  true = is_valid_dict(Details),
+  true;
+is_valid_message({welcome,SessionId,Details}) ->
+  true = is_valid_id(SessionId),
+  true = is_valid_dict(Details),
+  true;
+is_valid_message({abort,Details,Reason}) ->
+  true = is_valid_dict(Details),
+  true = is_valid_uri(Reason,abort),
+  true;
+is_valid_message({challenge,AuthMethod,Extra}) ->
+  true = is_binary(AuthMethod) or is_atom(AuthMethod),
+  true = is_valid_dict(Extra),
+  true;
+is_valid_message({authenticate,Signature,Extra}) ->
+  true = is_binary(Signature),
+  true = is_valid_dict(Extra),
+  true;
+is_valid_message({goodbye,Details,Reason}) ->
+  true = is_valid_uri(Reason,goodbye),
+  true = is_valid_dict(Details),
+  true;
+is_valid_message({heartbeat,IncomingSeq,OutgoingSeq}) ->
+  true = is_integer(IncomingSeq),
+  true = is_integer(OutgoingSeq),
+  true;
+is_valid_message({error,MsgType,RequestId,Details,Error}) ->
+  is_valid_message({error,MsgType,RequestId,Details,Error,undefined,undefined});
+is_valid_message({error,MsgType,RequestId,Details,Error,Arguments}) ->
+  is_valid_message({error,MsgType,RequestId,Details,Error,Arguments,undefined});
+is_valid_message({error,MsgType,RequestId,Details,Error,Arguments,ArgumentsKw}) ->
+  true = case MsgType of
+           subscribe -> true;
+           unsubscribe -> true;
+           publish -> true;
+           register -> true;
+           unregister -> true;
+           call -> true;
+           invocation -> true;
+           _ -> false
+         end,
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Details),
+  true = is_valid_uri(Error,error),
+  true = are_valid_arguments(Arguments,ArgumentsKw),
+  true;
+is_valid_message({publish,RequestId,Options,Topic}) ->
+  is_valid_message({publish,RequestId,Options,Topic,undefined,undefined});
+is_valid_message({publish,RequestId,Options,Topic,Arguments}) ->
+  is_valid_message({publish,RequestId,Options,Topic,Arguments,undefined});
+is_valid_message({publish,RequestId,Options,Topic,Arguments,ArgumentsKw}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Options),
+  true = is_valid_uri(Topic),
+  true = are_valid_arguments(Arguments,ArgumentsKw),
+  true;
+is_valid_message({published,RequestId,PublicationId}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_id(PublicationId),
+  true;
+is_valid_message({subscribe,RequestId,Options,Topic}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Options),
+  true = is_valid_uri(Topic),
+  true;
+is_valid_message({subscribed,RequestId,SubscriptionId}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_id(SubscriptionId),
+  true;
+is_valid_message({unsubscribe,RequestId,SubscriptionId}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_id(SubscriptionId),
+  true;
+is_valid_message({unsubscribed,RequestId}) ->
+  true = is_valid_id(RequestId),
+  true;
+is_valid_message({event,SubscriptionId,PublicationId,Details}) ->
+  is_valid_message({event,SubscriptionId,PublicationId,Details,undefined,undefined});
+is_valid_message({event,SubscriptionId,PublicationId,Details,Arguments}) ->
+  is_valid_message({event,SubscriptionId,PublicationId,Details,Arguments,undefined});
+is_valid_message({event,SubscriptionId,PublicationId,Details,Arguments,ArgumentsKw}) ->
+  true = is_valid_id(SubscriptionId),
+  true = is_valid_id(PublicationId),
+  true = is_valid_dict(Details),
+  true = are_valid_arguments(Arguments,ArgumentsKw),
+  true;
+is_valid_message({call,RequestId,Options,Procedure}) ->
+  is_valid_message({call,RequestId,Options,Procedure,undefined,undefined});
+is_valid_message({call,RequestId,Options,Procedure,Arguments}) ->
+  is_valid_message({call,RequestId,Options,Procedure,Arguments,undefined});
+is_valid_message({call,RequestId,Options,Procedure,Arguments,ArgumentsKw}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Options),
+  true = is_valid_uri(Procedure),
+  true = are_valid_arguments(Arguments,ArgumentsKw),
+  true;
+is_valid_message({cancel,RequestId,Options}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Options),
+  true;
+is_valid_message({result,RequestId,Details}) ->
+  is_valid_message({result,RequestId,Details,undefined,undefined});
+is_valid_message({result,RequestId,Details,Arguments}) ->
+  is_valid_message({result,RequestId,Details,Arguments,undefined});
+is_valid_message({result,RequestId,Details,Arguments,ArgumentsKw}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Details),
+  true = are_valid_arguments(Arguments,ArgumentsKw),
+  true;
+is_valid_message({register,RequestId,Options,Procedure}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Options),
+  true = is_valid_uri(Procedure),
+  true;
+is_valid_message({registered,RequestId,RegistrationId}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_id(RegistrationId),
+  true;
+is_valid_message({unregister,RequestId,RegistrationId}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_id(RegistrationId),
+  true;
+is_valid_message({unregistered,RequestId}) ->
+  true = is_valid_id(RequestId),
+  true;
+is_valid_message({invocation,RequestId, RegistrationId, Details}) ->
+  is_valid_message({invocation,RequestId, RegistrationId, Details, undefined, undefined});
+is_valid_message({invocation,RequestId, RegistrationId, Details, Arguments}) ->
+  is_valid_message({invocation,RequestId, RegistrationId, Details, Arguments, undefined});
+is_valid_message({invocation,RequestId, RegistrationId, Details, Arguments, ArgumentsKw}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_id(RegistrationId),
+  true = is_valid_dict(Details),
+  true = are_valid_arguments(Arguments,ArgumentsKw),
+  true;
+is_valid_message({interrupt,RequestId,Options}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Options),
+  true;
+is_valid_message({yield,RequestId,Options}) ->
+  is_valid_message({yield,RequestId,Options, undefined,undefined});
+is_valid_message({yield,RequestId,Options, Arguments}) ->
+  is_valid_message({yield,RequestId,Options, Arguments,undefined});
+is_valid_message({yield,RequestId,Options, Arguments,ArgumentsKw}) ->
+  true = is_valid_id(RequestId),
+  true = is_valid_dict(Options),
+  true = are_valid_arguments(Arguments,ArgumentsKw),
+  true;
+is_valid_message({ping,Data}) ->
+  true = is_binary(Data),
+  true;
+is_valid_message({pong,Data}) ->
+  true = is_binary(Data),
+  true;
+is_valid_message(_) ->
+  false.
+
+are_valid_arguments(undefined,undefined) ->
+  true;
+are_valid_arguments(Arguments,undefined) ->
+  true = is_list(Arguments),
+  true;
+are_valid_arguments(Arguments,ArgumentsKw) ->
+  true = is_list(Arguments),
+  true = is_valid_dict(ArgumentsKw),
+  true.
+
 
 -define(HELLO,1).
 -define(WELCOME,2).
@@ -213,9 +394,6 @@ is_valid_argumentskw(_)  -> false.
 -define(INVOCATION,68).
 -define(INTERRUPT,69).
 -define(YIELD,70).
-
-
-
 
 
 to_erl([?HELLO,Realm,Details]) ->
