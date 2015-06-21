@@ -21,7 +21,7 @@
 %%
 
 {application, wamper, [
-	{id, "wamper"},
+	{id, "git"},
 	{description, "library of functions used for erwa, both client or router"},
 	{vsn, "0.1.0"},
 	{modules, []},
