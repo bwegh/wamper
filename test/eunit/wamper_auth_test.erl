@@ -14,7 +14,7 @@
 -define(CHALLENGE,
   <<<<"{\"nonce\": \"LHRTC9zeOIrt_9U3\", \"authprovider\": \"userdb\", \"authid\": \"peter\",\"timestamp\":">>/binary,
   <<" \"2015-01-29T20:36:25.448Z\", \"authrole\": \"user\",\"authmethod\": \"wampcra\", \"session\":">>/binary,
-  <<"3251278072152162}">>/binary>>).
+  <<" 3251278072152162}">>/binary>>).
 
 wamp_cra_test() ->
   Key = <<"secret1">>,
