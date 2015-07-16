@@ -32,42 +32,32 @@
 
 
 %% @doc calculates the cryptographic hash of the challenge by using the secret key.
--spec wamp_cra(Key :: binary(), Challenge :: binary() ) -> binary().
-wamp_cra(Key,Challenge) ->
-  Bin = crypto:hmac(sha256,Key,Challenge),
+-spec wamp_cra(Key :: binary(), Challenge :: binary()) -> binary().
+wamp_cra(Key, Challenge) ->
+  Bin = crypto:hmac(sha256, Key, Challenge),
   base64:encode(Bin).
-
 
 %% @doc calculates the derived key from secret key, using salt and iterations.
 -spec pbkdf2(SecretKey :: binary(), Salt :: binary(),
-                      Iterations :: non_neg_integer(),
-                      Length :: non_neg_integer()) -> {ok, NewKey :: binary()}.
+    Iterations :: non_neg_integer(),
+    Length :: non_neg_integer()) -> {ok, NewKey :: binary()}.
 pbkdf2(SecretKey, Salt, Iterations, Length) ->
   pbkdf2:pbkdf2(SecretKey, Salt, Iterations, Length).
 
-
--spec create_wampcra_challenge(AuthProvider :: binary(), AuthId :: binary(), Authrole :: binary(), Session :: non_neg_integer() ) -> {ok,Challenge :: binary(), calendar:timestamp() }.
+-spec create_wampcra_challenge(AuthProvider :: binary(), AuthId :: binary(), Authrole :: binary(),
+    Session :: non_neg_integer()) -> {ok, Challenge :: binary(), calendar:timestamp()}.
 create_wampcra_challenge(AuthProvider, AuthId, Authrole, Session) ->
-  Now = erlang:now(),
-  {{Year,Month,Day},{Hour,Minute,Seconds}} = calendar:now_to_universal_time(Now),
-  Timestamp = list_to_binary(io_lib:format("~.10B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z",[Year,Month,Day,Hour,Minute,Seconds])),
-  Challenge = jsx:encode([{<<"nonce">>,nonce()},{<<"authprovider">>,AuthProvider},
-                          {<<"authid">>,AuthId},{<<"timestamp">>,Timestamp},
-                          {<<"authrole">>,Authrole},{<<"authmethod">>,<<"wampcra">>},
-                          {<<"session">>,Session}]),
-  {ok, Challenge, Now }.
+  Now = os:timestamp(),
+  {{Year, Month, Day}, {Hour, Minute, Seconds}} = calendar:now_to_universal_time(Now),
+  Timestamp = list_to_binary(
+    io_lib:format("~.10B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.000Z", [Year, Month, Day, Hour, Minute, Seconds])),
+  Challenge = jsx:encode([{<<"nonce">>, nonce()}, {<<"authprovider">>, AuthProvider},
+    {<<"authid">>, AuthId}, {<<"timestamp">>, Timestamp},
+    {<<"authrole">>, Authrole}, {<<"authmethod">>, <<"wampcra">>},
+    {<<"session">>, Session}]),
+  {ok, Challenge, Now}.
 
+
+%% @private
 nonce() ->
   base64:encode(crypto:strong_rand_bytes(15)).
-
-
--ifdef(TEST).
-
-wamp_cra_test() ->
-  Challenge = <<"{\"nonce\": \"LHRTC9zeOIrt_9U3\", \"authprovider\": \"userdb\", \"authid\": \"peter\",\"timestamp\": \"2015-01-29T20:36:25.448Z\", \"authrole\": \"user\",\"authmethod\": \"wampcra\", \"session\": 3251278072152162}">>,
-  Key = <<"secret1">>,
-  Signature = <<"/h8nclt5hisNxpVobobQR7f8nL1IAZhsllT014mo/xg=">>,
-  Signature = wamp_cra(Key, Challenge),
-  ok.
-
--endif.
