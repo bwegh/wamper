@@ -10,3 +10,6 @@ rel/example_project
 .rebar
 logs/
 .erlang.mk.*
+*.iml
+.idea
+.erlang.mk

@@ -1,5 +1,5 @@
 %%
-%% Copyright (c) 2014 Bas Wegh
+%% Copyright (c) 2014-2015 Bas Wegh
 %%
 %% Permission is hereby granted, free of charge, to any person obtaining a copy
 %% of this software and associated documentation files (the "Software"), to deal
@@ -19,21 +19,23 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 %%
+%%%-------------------------------------------------------------------
+%%% @doc
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(wamper_auth_test).
+-author("tihon").
 
--module(eunit_SUITE).
+-include_lib("eunit/include/eunit.hrl").
 
--include_lib("common_test/include/ct.hrl").
+-define(CHALLENGE,
+  <<<<"{\"nonce\": \"LHRTC9zeOIrt_9U3\", \"authprovider\": \"userdb\", \"authid\": \"peter\",\"timestamp\":">>/binary,
+  <<" \"2015-01-29T20:36:25.448Z\", \"authrole\": \"user\",\"authmethod\": \"wampcra\", \"session\":">>/binary,
+  <<" 3251278072152162}">>/binary>>).
 
-%% ct.
--export([all/0]).
-
-%% Tests.
--export([eunit/1]).
-
-%% ct.
-
-all() ->
-	[eunit].
-
-eunit(_) ->
-	ok = eunit:test({application, wamper}).
+wamp_cra_test() ->
+  Key = <<"secret1">>,
+  Signature = <<"/h8nclt5hisNxpVobobQR7f8nL1IAZhsllT014mo/xg=">>,
+  Signature = wamper_auth:wamp_cra(Key, ?CHALLENGE),
+  ok.
