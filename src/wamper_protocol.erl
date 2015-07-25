@@ -25,10 +25,6 @@
 
 -export([deserialize/2, serialize/2]).
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 -define(JSONB_SEPARATOR, <<24>>).
 
 deserialize(Buffer, Encoding) ->

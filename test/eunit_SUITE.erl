@@ -1,5 +1,5 @@
 %%
-%% Copyright (c) 2014-2015 Bas Wegh
+%% Copyright (c) 2014 Bas Wegh
 %%
 %% Permission is hereby granted, free of charge, to any person obtaining a copy
 %% of this software and associated documentation files (the "Software"), to deal
@@ -19,38 +19,21 @@
 %% OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 %% SOFTWARE.
 %%
-%%%-------------------------------------------------------------------
-%%% @doc
-%%%
-%%% @end
-%%%-------------------------------------------------------------------
 
--define(HELLO, 1).
--define(WELCOME, 2).
--define(ABORT, 3).
--define(CHALLENGE, 4).
--define(AUTHENTICATE, 5).
--define(GOODBYE, 6).
--define(HEARTBEAT, 7).
--define(ERROR, 8).
+-module(eunit_SUITE).
 
--define(PUBLISH, 16).
--define(PUBLISHED, 17).
+-include_lib("common_test/include/ct.hrl").
 
--define(SUBSCRIBE, 32).
--define(SUBSCRIBED, 33).
--define(UNSUBSCRIBE, 34).
--define(UNSUBSCRIBED, 35).
--define(EVENT, 36).
+%% ct.
+-export([all/0]).
 
--define(CALL, 48).
--define(CANCEL, 49).
--define(RESULT, 50).
+%% Tests.
+-export([eunit/1]).
 
--define(REGISTER, 64).
--define(REGISTERED, 65).
--define(UNREGISTER, 66).
--define(UNREGISTERED, 67).
--define(INVOCATION, 68).
--define(INTERRUPT, 69).
--define(YIELD, 70).
+%% ct.
+
+all() ->
+	[eunit].
+
+eunit(_) ->
+	ok = eunit:test({application, wamper}).

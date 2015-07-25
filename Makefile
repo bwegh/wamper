@@ -1,4 +1,5 @@
 PROJECT = wamper
+CT_SUITES = eunit
 CT_OPTS = -cover test/cover.spec
 ERLC_OPTS = +debug_info
 

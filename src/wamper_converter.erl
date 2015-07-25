@@ -25,18 +25,10 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(wamper_converter).
--author("tihon").
 
 -include("wamper_header_mapping.hrl").
 -include("wamper_message_codes.hrl").
 
--ifndef(TEST).
--define(LOG(F, A),
-  ct:log(F, A),
-  ct:print(F, A)).
--else.
--define(LOG(F, A), io:format(F, A)).
--endif.
 
 %% API
 -export([to_wamp/1, to_erl/1]).
@@ -364,7 +356,6 @@ convert_error(Direction, Error) ->
 
 %% @private
 convert_dict(Type, PropList, Direction) when is_list(PropList) ->
-  ?LOG("the use of proplists is deprecated~nProplist: ~p~n", [PropList]),
   Map = maps:from_list(PropList),
   convert_dict(Type, Map, Direction);
 convert_dict(Type, Map, Direction) ->
