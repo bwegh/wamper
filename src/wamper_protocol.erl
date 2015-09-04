@@ -125,7 +125,7 @@ serialize_message(Message, raw_erlbin) ->
   Enc = term_to_binary(Message),
   add_binary_frame(Enc);
 serialize_message(Message, raw_msgpack) ->
-  Enc = case msgpack:pack(Message, [{format, map}]) of
+    Enc = case msgpack:pack(Message, [{format, map},{allow_atom, pack}]) of
           {error, Reason} ->
             error(Reason);
           Msg ->
